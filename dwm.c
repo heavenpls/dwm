@@ -145,6 +145,7 @@ typedef struct {
 } Rule;
 
 /* function declarations */
+static void printlog(char *ch);
 static void show_hidden();
 static void applyrules(Client *c);
 static int applysizehints(Client *c, int *x, int *y, int *w, int *h, int interact);
@@ -409,6 +410,11 @@ arrangemon(Monitor *m)
 void
 attach(Client *c)
 {
+/*	Client **tail; 
+	for (tail=&c->mon->clients;*tail;tail=&(*tail)->next);
+	*tail = c;
+	c->next = NULL;
+*/	
 	c->next = c->mon->clients;
 	c->mon->clients = c;
 }
@@ -416,6 +422,11 @@ attach(Client *c)
 void
 attachstack(Client *c)
 {
+/*	Client **tail;
+	for (tail=&c->mon->stack;*tail;tail=&(*tail)->snext);
+	*tail = c;
+	c->snext = NULL;
+*/
 	c->snext = c->mon->stack;
 	c->mon->stack = c;
 }
@@ -750,10 +761,10 @@ drawbar(Monitor *m)
 				}else
 					drw_setscheme(drw,scheme[SchemeNorm]);
 				int name_width = TEXTW(c->name);
-				x += name_width;
 				if ( ( w = m->ww - tw - x ) > bh ){
-					drw_text(drw, x, 0, name_width, bh, lrpad / 2, m->sel->name, 0);
+					drw_text(drw, x, 0, name_width, bh, lrpad / 2, c->name, 0);
 				}
+				x += name_width;
 				if (m->sel->isfloating)
 					drw_rect(drw, x + boxs, boxs, boxw, boxw, m->sel->isfixed, 0);
 				}
@@ -853,7 +864,7 @@ void
 focusstack(const Arg *arg)
 {
 	Client *c = NULL, *i;
-
+	
 	if (!selmon->sel || (selmon->sel->isfullscreen && lockfullscreen))
 		return;
 	if (arg->i > 0) {
@@ -1090,7 +1101,7 @@ manage(Window w, XWindowAttributes *wa)
 	c->mon->sel = c;
 	arrange(c->mon);
 	XMapWindow(dpy, c->win);
-	focus(NULL);
+	focus(c);
 }
 
 void
@@ -1122,12 +1133,16 @@ monocle(Monitor *m)
 	Client *c;
 
 	for (c = m->clients; c; c = c->next)
-		if (ISVISIBLE(c))
+		if (ISSHOW(c))
 			n++;
 	if (n > 0) /* override layout symbol */
 		snprintf(m->ltsymbol, sizeof m->ltsymbol, "[%d]", n);
-	for (c = nexttiled(m->clients); c; c = nexttiled(c->next))
-		resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, 0);
+	for (c = nexttiled(m->clients); c; c = nexttiled(c->next)){
+		resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, 0);	
+		if ( c != m->sel)
+			XMoveWindow(dpy, c->win, WIDTH(c) * -2, c->y);
+
+	}
 }
 
 void
@@ -1362,15 +1377,27 @@ resizemouse(const Arg *arg)
 void
 restack(Monitor *m)
 {
-	Client *c;
+	Client *c,*mw;
 	XEvent ev;
 	XWindowChanges wc;
-
+	
 	drawbar(m);
 	if (!m->sel)
 		return;
-	if (m->sel->isfloating || !m->lt[m->sellt]->arrange)
+	if (m->sel->isfloating )
 		XRaiseWindow(dpy, m->sel->win);
+	if ( strcmp(m->lt[m->sellt]->symbol,"[M]") == 0 ){
+		XRaiseWindow(dpy, m->sel->win);
+		for(mw=m->clients;mw;mw = mw->next){
+			if ( ISSHOW(mw) ){
+				if ( mw != m->sel )
+					XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, mw->y);
+				else
+					XMoveWindow(dpy,mw->win,mw->x,mw->y);
+			}
+		}
+	}
+		
 	if (m->lt[m->sellt]->arrange) {
 		wc.stack_mode = Below;
 		wc.sibling = m->barwin;
@@ -1629,7 +1656,7 @@ showhide(Client *c)
 {
 	if (!c)
 		return;
-	if (ISVISIBLE(c)) {
+	if (ISSHOW(c)) {
 		/* show clients top down */
 		XMoveWindow(dpy, c->win, c->x, c->y);
 		if ((!c->mon->lt[c->mon->sellt]->arrange || c->isfloating) && !c->isfullscreen)
@@ -1698,7 +1725,7 @@ tile(Monitor *m)
 		mw = m->nmaster ? m->ww * m->mfact : 0;
 	else
 		mw = m->ww;
-	for (i = my = ty = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++)
+	for (i = my = ty = 0, c = nexttiled(m->clients); c; c = nexttiled(c->next), i++){
 		if (i < m->nmaster) {
 			h = (m->wh - my) / (MIN(n, m->nmaster) - i);
 			resize(c, m->wx, m->wy + my, mw - (2*c->bw), h - (2*c->bw), 0);
@@ -1711,6 +1738,7 @@ tile(Monitor *m)
 			if (ty + HEIGHT(c) < m->wh)
 				ty += HEIGHT(c);
 		}
+	}
 }
 
 void
@@ -2059,7 +2087,7 @@ view(const Arg *arg)
 	selmon->seltags ^= 1; /* toggle sel tagset */
 	if (arg->ui & TAGMASK)
 		selmon->tagset[selmon->seltags] = arg->ui & TAGMASK;
-	focus(NULL);
+	focus(selmon->sel);
 	arrange(selmon);
 }
 
@@ -2142,9 +2170,25 @@ zoom(const Arg *arg)
 }
 void 
 show_hidden(){	
+	Client *mw = selmon->sel;
+	if ( selmon->sel->ishidden ){
+		XMoveWindow(dpy,mw->win,mw->x,mw->y);
+	}else{
+		XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, mw->y);
+		arrange(selmon);
+	}	
 	selmon->sel->ishidden = !selmon->sel->ishidden;	
-	resizeclient(selmon->sel,300000,30000,10,10);
-	arrange(selmon);
+}
+void
+printlog(char *ch){
+	FILE *file = fopen("/var/log/dwm/1.log","a");
+	char des[256];
+	strcpy(des,ch);
+	sprintf(des+strlen(des),"\n");
+	if ( file == NULL )
+		return;
+	fprintf(file,des);
+	fclose(file);
 }
 
 int
