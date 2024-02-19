@@ -1291,8 +1291,8 @@ monocle(Monitor *m)
 	for (c = m->clients; c; c = c->next)
 		if (ISSHOW(c))
 			n++;
-	if (n > 0) /* override layout symbol */
-		snprintf(m->ltsymbol, sizeof m->ltsymbol, "[%d]", n);
+//	if (n > 0) /* override layout symbol */
+//		snprintf(m->ltsymbol, sizeof m->ltsymbol, "[%d]", n);
 	for (c = nexttiled(m->clients); c; c = nexttiled(c->next)){
 		resize(c, m->wx, m->wy, m->ww - 2 * c->bw, m->wh - 2 * c->bw, 0);	
 		if ( c != m->sel)
@@ -1590,14 +1590,14 @@ restack(Monitor *m)
 	if (m->sel->isfloating )
 		XRaiseWindow(dpy, m->sel->win);
 	if ( strcmp(m->lt[m->sellt]->symbol,"[M]") == 0 ){
-		XRaiseWindow(dpy, m->sel->win);
+		//XRaiseWindow(dpy, m->sel->win);
 		for(mw=m->clients;mw;mw = mw->next){
-			if ( ISSHOW(mw) ){
-				if ( mw != m->sel )
-					XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, mw->y);
-				else
+			if ( ISSHOW(mw) && mw == m->sel ){
 					XMoveWindow(dpy,mw->win,mw->x,mw->y);
 			}
+			else{
+					XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, mw->y);
+            }
 		}
 	}
 		
@@ -2613,13 +2613,16 @@ systraytomon(Monitor *m) {
 void 
 show_hidden(){	
 	Client *mw = selmon->sel;
+    char ch[6];
+    sprintf(ch,"%s",selmon->sel->ishidden?"true":"false");
+    printlog(ch);
 	if ( selmon->sel->ishidden ){
 		XMoveWindow(dpy,mw->win,mw->x,mw->y);
 	}else{
-		XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, mw->y);
-		arrange(selmon);
+		XMoveWindow(dpy, mw->win, WIDTH(mw) * -2, 0);
 	}	
 	selmon->sel->ishidden = !selmon->sel->ishidden;	
+	arrange(selmon);
 }
 void
 printlog(char *ch){
