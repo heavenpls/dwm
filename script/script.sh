@@ -10,8 +10,11 @@ while true; do
     if (( i%10 == 0 )); then
         bash /home/heaven/.config/dwm/script/mem.sh
     fi
+    if (( i%5 == 0 ));then
+        bash /home/heaven/.config/dwm/script/network.sh
+    fi
     i=$(( i+1 ))
     sleep 1
     source $dir
-    xsetroot -name "$_mem$_date"
+    xsetroot -name "$_network$_mem$_date"
 done
